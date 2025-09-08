@@ -82,7 +82,7 @@ def process_groups(groups, blosum62):
     return ret
 
 
-def partition_dataframe(df, chunk_size=100, list_size=10):
+def partition_dataframe(df, chunk_size=100, list_size=1000):
     all_chunked_dfs = []
     num_chunks = (len(df) + chunk_size - 1) // chunk_size
 
@@ -105,7 +105,7 @@ def partition_dataframe(df, chunk_size=100, list_size=10):
 def process_data_cc(df, blosum62_mat):
     gps = partition_dataframe(df)
     ops = {}
-    with ProcessPoolExecutor(4) as executor:
+    with ProcessPoolExecutor(10) as executor:
         results = executor.map(partial(process_groups, blosum62=blosum62_mat), gps)
         for result in results:
             ops.update(result)
@@ -120,4 +120,12 @@ if __name__ == "__main__":
     df['uniprot_seq'] = df['uniprot_seq'].str.replace("U", "C")
 
     blosum62_matrix = substitution_matrices.load("BLOSUM62")
-    result = process_data_cc(df[0:1000], blosum62_mat=blosum62_matrix)
+    result = process_data_cc(df, blosum62_mat=blosum62_matrix)
+
+    df['label_mask'] = float('nan')
+
+    for row_index, value in result.items():
+        if row_index in df.index:
+            df.loc[row_index, 'label_mask'] = value
+
+    df.to_excel("/Users/haripat/Desktop/SF/protein/data/protein_constructs_w_label_masks.xlsx")
