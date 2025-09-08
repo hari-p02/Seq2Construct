@@ -4,6 +4,10 @@ from Bio import pairwise2
 from Bio.Align import substitution_matrices
 import pandas as pd
 import re
+from tqdm import tqdm
+import swifter 
+# swifter.config.set_defaults(allow_dask_on_strings=True, progress_bar=True)
+
 
 def sanitize_sequence_advanced(sequence: str) -> str:
     if not isinstance(sequence, str):
@@ -82,7 +86,7 @@ def process_groups(groups, blosum62):
     return ret
 
 
-def partition_dataframe(df, chunk_size=100, list_size=1000):
+def partition_dataframe(df, chunk_size=100, list_size=5):
     all_chunked_dfs = []
     num_chunks = (len(df) + chunk_size - 1) // chunk_size
 
@@ -109,8 +113,27 @@ def process_data_cc(df, blosum62_mat):
         results = executor.map(partial(process_groups, blosum62=blosum62_mat), gps)
         for result in results:
             ops.update(result)
-            print("MADE: ", )
+            print("MADE: ", len(ops.keys()))
     return ops
+
+# def process_data_cc(df, blosum62_mat):
+#     gps = partition_dataframe(df)
+#     ops = {}
+
+#     total_groups = len(gps)
+#     print(f"[process_data_cc] Total partitions to process: {total_groups}")
+
+#     print("[process_data_cc] Starting multiprocessing")
+#     with ProcessPoolExecutor(10) as executor:
+#         # Wrap results in tqdm for progress bar
+#         results = executor.map(partial(process_groups, blosum62=blosum62_mat), gps)
+
+#         for idx, result in enumerate(tqdm(results, total=total_groups, desc="Processing groups", unit="group")):
+#             ops.update(result)
+
+#     print("[process_data_cc] All processing complete")
+#     return ops
+
 
 
 if __name__ == "__main__":
@@ -118,14 +141,25 @@ if __name__ == "__main__":
     df['pdb_sequence_sanitized'] = df['pbd_id'].apply(sanitize_sequence_advanced)
     df['pdb_sequence_sanitized'] = df['pdb_sequence_sanitized'].str.replace("U", "C")
     df['uniprot_seq'] = df['uniprot_seq'].str.replace("U", "C")
-
     blosum62_matrix = substitution_matrices.load("BLOSUM62")
-    result = process_data_cc(df, blosum62_mat=blosum62_matrix)
 
-    df['label_mask'] = float('nan')
+    # def mask_wrapper(row):
+    #     return create_multi_class_mask(row['uniprot_seq'], row['pdb_sequence_sanitized'], blosum62_matrix)
 
-    for row_index, value in result.items():
-        if row_index in df.index:
-            df.loc[row_index, 'label_mask'] = value
+    print("STARTING PROCESSING")
+    df['label_mask'] = df.swifter.progress_bar(True).allow_dask_on_strings(True).apply(
+        lambda row: create_multi_class_mask(row['uniprot_seq'], row['pdb_sequence_sanitized'], blosum62_matrix),
+        axis=1
+    )
+    # df['label_mask'] = df.swifter.apply(lambda row: create_multi_class_mask(row['uniprot_seq'], row['pdb_sequence_sanitized'], blosum62_matrix), axis=1)
+    # with ProcessPoolExecutor() as executor:
+    #     df['label_mask'] = list(executor.map(mask_wrapper, [row for _, row in df.iterrows()]))
+    # result = process_data_cc(df, blosum62_mat=blosum62_matrix)
 
-    df.to_excel("/Users/haripat/Desktop/SF/protein/data/protein_constructs_w_label_masks.xlsx")
+    # df['label_mask'] = float('nan')
+
+    # for row_index, value in result.items():
+    #     if row_index in df.index:
+    #         df.loc[row_index, 'label_mask'] = value
+
+    # df.to_excel("/Users/haripat/Desktop/SF/protein/data/protein_constructs_w_label_masks.xlsx")
