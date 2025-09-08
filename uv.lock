@@ -596,7 +596,7 @@ requires-dist = [
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", specifier = ">=2.3.1" },
     { name = "rcsb-api", specifier = ">=1.4.0" },
-    { name = "swifter", specifier = ">=1.4.0" },
+    { name = "swifter", specifier = "==1.4.0" },
 ]
 
 [[package]]
