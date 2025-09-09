@@ -100,7 +100,7 @@ def create_multi_class_mask(uniprot_sequence: str, pdb_construct_sequence: str) 
     best_alignment = alignments[0]
 
     # Convert to aligned sequences (strings with '-' for gaps)
-    aligned_uniprot, aligned_pdb = str(best_alignment).splitlines()[0:2]
+    # aligned_uniprot, aligned_pdb = str(best_alignment).splitlines()[0:2]
     alignment_string = best_alignment.format("fasta")
     alignment_strings = alignment_string.split(">")
 
@@ -111,8 +111,8 @@ def create_multi_class_mask(uniprot_sequence: str, pdb_construct_sequence: str) 
     for u_char, p_char in zip(aligned_uniprot, aligned_pdb):
         if u_char == "-":
             # Extra residue in PDB that UniProt doesn't have → ignore
-            # continue
-            modification_mask.append(3)
+            continue
+            # modification_mask.append(3)
         if p_char == "-":
             modification_mask.append(1)  # Deleted
         elif u_char == p_char:
@@ -207,6 +207,14 @@ if __name__ == "__main__":
         lambda row: create_multi_class_mask(row['uniprot_seq'], row['pdb_sequence_sanitized']),
         axis=1
     )
+
+
+
+
+    # df['label_mask'] = df.swifter.progress_bar(True).allow_dask_on_strings(True).apply(
+    #     lambda row: (print(f"Processing row: {row.name}") or create_multi_class_mask(row['uniprot_seq'], row['pdb_sequence_sanitized'])),
+    #     axis=1
+    # )
     # df['label_mask'] = df.swifter.apply(lambda row: create_multi_class_mask(row['uniprot_seq'], row['pdb_sequence_sanitized'], blosum62_matrix), axis=1)
     # with ProcessPoolExecutor() as executor:
     #     df['label_mask'] = list(executor.map(mask_wrapper, [row for _, row in df.iterrows()]))
