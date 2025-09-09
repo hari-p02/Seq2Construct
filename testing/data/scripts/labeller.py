@@ -10,12 +10,11 @@ from Bio.Align import PairwiseAligner, substitution_matrices
 # Initialize aligner once (outside the function for performance)
 aligner = PairwiseAligner()
 aligner.substitution_matrix = substitution_matrices.load("BLOSUM62")
-aligner.mode = "global"  # Equivalent to globalds
-aligner.open_gap_score = -10      # Gap open penalty
-aligner.extend_gap_score = -0.5   # Gap extension penalty
-# Equivalent to penalize_end_gaps=False in pairwise2
-aligner.target_end_gap_score = 0.0  # No penalty for gaps at end of target
-aligner.query_end_gap_score = 0.0   # No penalty for gaps at end of query
+aligner.mode = "global"  
+aligner.open_gap_score = -10      
+aligner.extend_gap_score = -0.5   
+aligner.target_end_gap_score = 0.0  
+aligner.query_end_gap_score = 0.0   
 
 
 def sanitize_sequence_advanced(sequence: str) -> str:
@@ -49,58 +48,15 @@ def sanitize_sequence_advanced(sequence: str) -> str:
     sanitized_seq = re.sub(f"[^{valid_chars}]", "X", processed_seq.upper())
     return sanitized_seq
 
-# def create_multi_class_mask(uniprot_sequence: str, pdb_construct_sequence: str, blosum62) -> list[int] | None:
-#     alignments = pairwise2.align.globalds(
-#         uniprot_sequence,
-#         pdb_construct_sequence,
-#         blosum62,
-#         -10,
-#         -0.5,
-#         penalize_end_gaps=False  # FIX: Added required argument
-#     )
-
-#     if not alignments:
-#         return None
-
-#     aligned_uniprot, aligned_pdb, score, begin, end = alignments[0]
-#     modification_mask = []
-
-#     for uniprot_char, pdb_char in zip(aligned_uniprot, aligned_pdb):
-#         if uniprot_char == '-':
-#             continue
-#         if pdb_char == '-':
-#             modification_mask.append(1)
-#         elif uniprot_char == pdb_char:
-#             modification_mask.append(0)
-#         else:
-#             modification_mask.append(2)
-
-#     if len(modification_mask) != len(uniprot_sequence):
-#         return None
-
-#     return modification_mask
 
 
 def create_multi_class_mask(uniprot_sequence: str, pdb_construct_sequence: str) -> list[int] | None:
-    """
-    Generates a modification mask by globally aligning a UniProt sequence
-    with a PDB construct sequence.
-
-    Labels:
-    - 0: Maintained
-    - 1: Deleted (present in UniProt but missing in PDB)
-    - 2: Mutated
-    """
-
-    # Perform alignment
     alignments = aligner.align(uniprot_sequence, pdb_construct_sequence)
     # if not alignments:
     #     return None
 
     best_alignment = alignments[0]
 
-    # Convert to aligned sequences (strings with '-' for gaps)
-    # aligned_uniprot, aligned_pdb = str(best_alignment).splitlines()[0:2]
     alignment_string = best_alignment.format("fasta")
     alignment_strings = alignment_string.split(">")
 
@@ -110,9 +66,7 @@ def create_multi_class_mask(uniprot_sequence: str, pdb_construct_sequence: str) 
     modification_mask = []
     for u_char, p_char in zip(aligned_uniprot, aligned_pdb):
         if u_char == "-":
-            # Extra residue in PDB that UniProt doesn't have → ignore
             continue
-            # modification_mask.append(3)
         if p_char == "-":
             modification_mask.append(1)  # Deleted
         elif u_char == p_char:
@@ -120,7 +74,6 @@ def create_multi_class_mask(uniprot_sequence: str, pdb_construct_sequence: str) 
         else:
             modification_mask.append(2)  # Mutated
 
-    # Always ensure mask length matches UniProt sequence
     if len(modification_mask) != len(uniprot_sequence):
         raise ValueError(
             f"Mask length {len(modification_mask)} does not match UniProt sequence length {len(uniprot_sequence)}"
@@ -172,23 +125,6 @@ def process_data_cc(df, blosum62_mat):
             print("MADE: ", len(ops.keys()))
     return ops
 
-# def process_data_cc(df, blosum62_mat):
-#     gps = partition_dataframe(df)
-#     ops = {}
-
-#     total_groups = len(gps)
-#     print(f"[process_data_cc] Total partitions to process: {total_groups}")
-
-#     print("[process_data_cc] Starting multiprocessing")
-#     with ProcessPoolExecutor(10) as executor:
-#         # Wrap results in tqdm for progress bar
-#         results = executor.map(partial(process_groups, blosum62=blosum62_mat), gps)
-
-#         for idx, result in enumerate(tqdm(results, total=total_groups, desc="Processing groups", unit="group")):
-#             ops.update(result)
-
-#     print("[process_data_cc] All processing complete")
-#     return ops
 
 
 
@@ -199,9 +135,7 @@ if __name__ == "__main__":
     df['uniprot_seq'] = df['uniprot_seq'].str.replace("U", "C")
     blosum62_matrix = substitution_matrices.load("BLOSUM62")
 
-    # def mask_wrapper(row):
-    #     return create_multi_class_mask(row['uniprot_seq'], row['pdb_sequence_sanitized'], blosum62_matrix)
-
+   
     print("STARTING PROCESSING")
     df['label_mask'] = df.swifter.progress_bar(True).allow_dask_on_strings(True).apply(
         lambda row: create_multi_class_mask(row['uniprot_seq'], row['pdb_sequence_sanitized']),
@@ -211,11 +145,6 @@ if __name__ == "__main__":
 
 
 
-    # df['label_mask'] = df.swifter.progress_bar(True).allow_dask_on_strings(True).apply(
-    #     lambda row: (print(f"Processing row: {row.name}") or create_multi_class_mask(row['uniprot_seq'], row['pdb_sequence_sanitized'])),
-    #     axis=1
-    # )
-    # df['label_mask'] = df.swifter.apply(lambda row: create_multi_class_mask(row['uniprot_seq'], row['pdb_sequence_sanitized'], blosum62_matrix), axis=1)
     # with ProcessPoolExecutor() as executor:
     #     df['label_mask'] = list(executor.map(mask_wrapper, [row for _, row in df.iterrows()]))
     # result = process_data_cc(df, blosum62_mat=blosum62_matrix)
