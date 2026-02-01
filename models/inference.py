@@ -294,7 +294,7 @@ def generate_embedding(sequence: str) -> np.ndarray:
 def load_model(checkpoint_path: str, device: torch.device) -> ConditionalVAE:
     """Load trained model from checkpoint"""
     
-    # Initialize model
+    # Initialize model with architecture matching training
     model = ConditionalVAE(
         embedding_dim=1536,
         hidden_dim=512,
@@ -309,7 +309,11 @@ def load_model(checkpoint_path: str, device: torch.device) -> ConditionalVAE:
     
     # Handle different checkpoint formats
     if 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
+        state_dict = checkpoint['model_state_dict']
+        # Remove torch.compile prefix if present
+        if any(k.startswith('_orig_mod.') for k in state_dict.keys()):
+            state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
+        model.load_state_dict(state_dict)
     else:
         model.load_state_dict(checkpoint)
     
@@ -324,13 +328,15 @@ def predict_constructs(
     sequence: str,
     device: torch.device,
     num_samples: int = 5,
-    temperature: float = 1.0
+    temperature: float = 1.0,
+    logit_bias: List[float] = None
 ) -> List[Tuple[str, np.ndarray, float]]:
     """
     Generate construct suggestions for a protein sequence.
     
-    Returns:
-        List of (construct_sequence, modification_mask, confidence) tuples
+    Args:
+        logit_bias: List of 3 floats to add to [Keep, Delete, Modify] logits
+                   to calibrate sensitivity.
     """
     
     # Generate embedding
@@ -349,6 +355,11 @@ def predict_constructs(
             # Forward pass (no teacher forcing)
             logits, mu, logvar = model(embedding_tensor, dummy_mask, attention_mask, teacher_forcing_ratio=0.0)
             
+            # Apply logit bias to handle class imbalance if provided
+            if logit_bias is not None:
+                bias_tensor = torch.tensor(logit_bias, device=device).view(1, 1, 3)
+                logits = logits + bias_tensor
+                
             # Apply temperature scaling
             logits = logits / temperature
             
@@ -532,7 +543,27 @@ Examples:
         help='Sampling temperature (higher = more diverse, default: 1.0)'
     )
     
+    parser.add_argument(
+        '--logit-bias',
+        type=float,
+        nargs=3,
+        default=None,
+        help='Bias for [Keep, Delete, Modify] logits (e.g., 2.0 0.0 0.0 to favor Keeping)'
+    )
+    
+    parser.add_argument(
+        '--keep-bias',
+        type=float,
+        default=0.0,
+        help='Shortcut to add bias specifically to the "Keep" class (default: 0.0)'
+    )
+    
     args = parser.parse_args()
+    
+    # Process biases
+    logit_bias = args.logit_bias
+    if logit_bias is None and args.keep_bias != 0.0:
+        logit_bias = [args.keep_bias, 0.0, 0.0]
     
     # Setup device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -541,6 +572,8 @@ Examples:
     print_header()
     print(f"{Colors.BOLD}Device:{Colors.END} {device}")
     print(f"{Colors.BOLD}Model:{Colors.END} {args.model}")
+    if logit_bias:
+        print(f"{Colors.BOLD}Logit Bias:{Colors.END} {logit_bias}")
     
     # Load model
     try:
@@ -561,7 +594,12 @@ Examples:
         
         print(f"{Colors.CYAN}Generating {args.num_samples} construct suggestions...{Colors.END}\n")
         
-        constructs = predict_constructs(model, sequence, device, num_samples=args.num_samples, temperature=args.temperature)
+        constructs = predict_constructs(
+            model, sequence, device, 
+            num_samples=args.num_samples, 
+            temperature=args.temperature,
+            logit_bias=logit_bias
+        )
         
         for i, (construct, mask, confidence) in enumerate(constructs, 1):
             print_construct(i, construct, mask, confidence, sequence)
