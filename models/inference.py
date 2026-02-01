@@ -216,7 +216,7 @@ def load_embedding_model(device: torch.device):
     
     from transformers import T5EncoderModel, AutoTokenizer
     
-    hf_token = ""  # Your HuggingFace token
+    hf_token = ""
     model_name = "ElnaggarLab/ankh-large"
     
     try:
